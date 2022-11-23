@@ -4,6 +4,6 @@
   "documentation": "https://github.com/neffs/ha-cometblue",
   "dependencies": [],
   "codeowners": ["@neffs"],
-  "requirements": ["cometblue_lite==0.5.3"],
+  "requirements": ["git+https://github.com/soldierkam/python-cometblue_lite.git@fix_ha_integration#cometblue_lite==0.5.3"],
   "version": "0.1.1"
 }
