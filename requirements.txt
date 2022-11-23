@@ -1,1 +1,1 @@
-cometblue_lite
+git+https://github.com/soldierkam/python-cometblue_lite.git@fix_ha_integration#egg=cometblue_lite

@@ -30,4 +30,4 @@ to the same temperature.
 
 ***
 
-[ha-cometblue]: https://github.com/neffs/ha-cometblue
+[ha-cometblue]: https://github.com/soldierkam/ha-cometblue/tree/fix_ble

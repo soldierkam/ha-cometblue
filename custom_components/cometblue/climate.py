@@ -16,10 +16,13 @@ climate cometblue:
 
 """
 import logging
-from datetime import timedelta
 from datetime import datetime
-import voluptuous as vol
+from datetime import timedelta
+from typing import Tuple
 
+import homeassistant.helpers.config_validation as cv
+import voluptuous as vol
+from homeassistant.components.bluetooth import async_ble_device_from_address
 from homeassistant.components.climate import ClimateEntity, PLATFORM_SCHEMA
 from homeassistant.components.climate.const import (
     ATTR_HVAC_MODE,
@@ -30,7 +33,6 @@ from homeassistant.components.climate.const import (
     DOMAIN,
 )
 from homeassistant.const import (
-    CONF_NAME,
     CONF_MAC,
     CONF_PIN,
     CONF_DEVICES,
@@ -39,8 +41,7 @@ from homeassistant.const import (
     ATTR_BATTERY_LEVEL,
     ATTR_LOCKED,
     PRECISION_HALVES)
-
-import homeassistant.helpers.config_validation as cv
+from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.setLevel(10)
@@ -68,11 +69,11 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
 
 
-async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
+async def async_setup_platform(hass: HomeAssistant, config, async_add_entities, discovery_info=None):
     devices = []
 
     for name, device_cfg in config[CONF_DEVICES].items():
-        dev = CometBlueThermostat(device_cfg[CONF_MAC], name, device_cfg[CONF_PIN])
+        dev = CometBlueThermostat(hass, device_cfg[CONF_MAC], name, device_cfg[CONF_PIN])
         devices.append(dev)
         if device_cfg[CONF_FAKE_MANUAL]:
             dev.fake_manual_mode = True
@@ -83,13 +84,13 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 class CometBlueThermostat(ClimateEntity):
     """Representation of a CometBlue thermostat."""
 
-    def __init__(self, _mac, _name, _pin=None):
+    def __init__(self, _hass: HomeAssistant, _mac, _name, _pin=None):
         from cometblue_lite import CometBlue
         """Initialize the thermostat."""
+        self._hass = _hass
         self._mac = _mac
         self._name = _name
-        self._pin = _pin
-        self._thermostat = CometBlue(_mac, _pin)
+        self._thermostat = CometBlue(_pin)
         self._lastupdate = datetime.now() - MIN_TIME_BETWEEN_UPDATES
         self.fake_manual_mode = False
 
@@ -97,7 +98,7 @@ class CometBlueThermostat(ClimateEntity):
     def unique_id(self):
         """Return unique ID for this device."""
         return self._mac
-    
+
     @property
     def available(self) -> bool:
         """Return if thermostat is available."""
@@ -158,8 +159,8 @@ class CometBlueThermostat(ClimateEntity):
             _LOGGER.debug("Temperature to set: {}".format(temperature))
             self._thermostat.target_temperature = temperature
             if self.fake_manual_mode:
-                 self._thermostat.target_temperature_high = temperature
-                 self._thermostat.target_temperature_low = temperature
+                self._thermostat.target_temperature_high = temperature
+                self._thermostat.target_temperature_low = temperature
 
     @property
     def min_temp(self):
@@ -198,12 +199,12 @@ class CometBlueThermostat(ClimateEntity):
             self._thermostat.is_off = True
 
     @property
-    def hvac_modes(self):
+    def hvac_modes(self) -> Tuple[str, ...]:
         if self.fake_manual_mode:
-            return (HVAC_MODE_HEAT,)
+            return HVAC_MODE_HEAT,
         elif self._thermostat.firmware_rev == "GEN34BLE":
             # GENIUS BLE 100 does not support manual mode
-            return (HVAC_MODE_AUTO,)
+            return HVAC_MODE_AUTO,
         else:
             return HVAC_MODE_HEAT, HVAC_MODE_AUTO, HVAC_MODE_OFF
 
@@ -225,12 +226,17 @@ class CometBlueThermostat(ClimateEntity):
     async def async_update(self):
         """Update the data from the thermostat."""
         now = datetime.now()
-        if ( 
-            self._thermostat.should_update() or
-            (self._lastupdate and self._lastupdate + MIN_TIME_BETWEEN_UPDATES < now)
+        if (
+                self._thermostat.should_update() or
+                (self._lastupdate and self._lastupdate + MIN_TIME_BETWEEN_UPDATES < now)
         ):
+            connectable_device = async_ble_device_from_address(self._hass, self._mac, True)
+            if connectable_device is None:
+                raise RuntimeError(
+                    f"No connectable device found for {self._mac}"
+                )
             try:
-                await self._thermostat.update()
+                await self._thermostat.update(connectable_device)
                 self._lastupdate = datetime.now()
             except Exception as ex:
                 _LOGGER.warning("Updating the state for {} failed: {}".format(self._mac, ex))
